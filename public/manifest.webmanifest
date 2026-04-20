@@ -1,0 +1,11 @@
+{
+  "name": "SkyRaid Royale",
+  "short_name": "SkyRaid",
+  "description": "Flap through neon skies, collect shards, dominate the leagues.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0a0420",
+  "theme_color": "#0a0420",
+  "icons": []
+}

@@ -1,0 +1,19 @@
+{
+  "name": "skyraid-royale",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "SkyRaid Royale — F2P mobile arcade flap-racer prototype",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vite": "^5.4.8"
+  }
+}
