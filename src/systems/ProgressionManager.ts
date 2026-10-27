@@ -1,47 +1,28 @@
-import type { SaveData, UpgradeId, SkinId, GhostFrame, LeagueId } from '../types';
-import { UPGRADES, ECONOMY, LEAGUES, upgradeCost } from '../config/balance';
+import { ECONOMY } from '../config/balance';
+import type { GearItem, MatchReward, SaveData } from '../types';
 
-const SAVE_KEY = 'skyraid.save.v1';
+const SAVE_KEY = 'skyraid.arena.save.v1';
 const SAVE_VERSION = 1;
 
 function defaultSave(): SaveData {
-  const upgrades: SaveData['upgrades'] = {
-    flapControl: { level: 0 },
-    shieldHits: { level: 0 },
-    coinMultiplier: { level: 0 },
-    shardDropRate: { level: 0 },
-    reviveCharges: { level: 0 },
-  };
   return {
     version: SAVE_VERSION,
-    runs: 0,
-    bestScore: 0,
-    bestGates: 0,
-    lifetimeCoins: 0,
-    coins: 0,
-    gems: 0,
-    powerCores: 0,
-    upgrades,
-    ownedSkins: ['default'],
-    selectedSkin: 'default',
+    gold: 0,
+    premiumCurrency: 0,
+    matchesPlayed: 0,
+    wins: 0,
+    bestMatchTimeMs: null,
+    freeChestProgress: 0,
+    freeChestCharges: 0,
+    weapon: null,
+    armor: null,
+    inventory: [],
     starterPackOffered: false,
     starterPackPurchased: false,
-    coinDoublerUntil: 0,
-    reviveTokens: 0,
-    lastPlayed: Date.now(),
-    leagueId: 'bronze',
-    leaguePoints: 0,
-    ghostBestPath: null,
-    ghostBestGates: 0,
-    nextRunModifierOffered: false,
-    tutorialCompleted: false,
+    battleBuffMatchesRemaining: 0,
   };
 }
 
-/**
- * ProgressionManager — localStorage-backed save, currencies, upgrades.
- * Singleton (exported instance). Import `progression` anywhere.
- */
 class ProgressionManager {
   private data: SaveData = defaultSave();
 
@@ -67,12 +48,11 @@ class ProgressionManager {
     }
   }
 
-  save(): void {
+  private save(): void {
     try {
-      this.data.lastPlayed = Date.now();
       localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
     } catch {
-      // localStorage unavailable (private mode, etc.) — run in-memory
+      // keep in memory
     }
   }
 
@@ -85,183 +65,80 @@ class ProgressionManager {
     return this.data;
   }
 
-  // ---- Currencies ----------------------------------------------------------
-
-  addCoins(amount: number): number {
-    const mult = this.getCoinMultiplier();
-    const final = Math.floor(amount * mult);
-    this.data.coins += final;
-    this.data.lifetimeCoins += final;
-    return final;
+  addPremiumCurrency(amount: number): void {
+    this.data.premiumCurrency += amount;
+    this.save();
   }
 
-  spendCoins(amount: number): boolean {
-    if (this.data.coins < amount) return false;
-    this.data.coins -= amount;
+  spendPremiumCurrency(amount: number): boolean {
+    if (this.data.premiumCurrency < amount) return false;
+    this.data.premiumCurrency -= amount;
     this.save();
     return true;
   }
 
-  addGems(amount: number): void {
-    this.data.gems += amount;
+  addInventoryItem(item: GearItem): void {
+    this.data.inventory = [item, ...this.data.inventory];
     this.save();
   }
 
-  spendGems(amount: number): boolean {
-    if (this.data.gems < amount) return false;
-    this.data.gems -= amount;
+  equipItem(itemId: string): GearItem | null {
+    const item = this.data.inventory.find((entry) => entry.id === itemId);
+    if (!item) return null;
+    if (item.slot === 'weapon') {
+      this.data.weapon = item;
+    } else {
+      this.data.armor = item;
+    }
+    this.save();
+    return item;
+  }
+
+  getEquippedBonuses(): { damage: number; hp: number } {
+    return {
+      damage: (this.data.weapon?.damageBonus ?? 0) + (this.data.armor?.damageBonus ?? 0),
+      hp: (this.data.weapon?.hpBonus ?? 0) + (this.data.armor?.hpBonus ?? 0),
+    };
+  }
+
+  hasBattleBuff(): boolean {
+    return this.data.battleBuffMatchesRemaining > 0;
+  }
+
+  getBattleDamageMultiplier(): number {
+    return this.hasBattleBuff() ? ECONOMY.starterPackDamageMultiplier : 1;
+  }
+
+  recordMatch(reward: MatchReward): void {
+    this.data.matchesPlayed += 1;
+    if (reward.winner === 'player') {
+      this.data.wins += 1;
+      if (this.data.bestMatchTimeMs === null || reward.durationMs < this.data.bestMatchTimeMs) {
+        this.data.bestMatchTimeMs = reward.durationMs;
+      }
+    }
+    this.data.gold += reward.goldEarned;
+    this.data.inventory = [reward.loot, ...this.data.inventory];
+    this.data.freeChestProgress += 1;
+    if (this.data.freeChestProgress >= ECONOMY.freeChestEveryMatches) {
+      this.data.freeChestProgress = 0;
+      this.data.freeChestCharges += 1;
+    }
+    if (this.data.battleBuffMatchesRemaining > 0) {
+      this.data.battleBuffMatchesRemaining -= 1;
+    }
+    this.save();
+  }
+
+  consumeFreeChest(): boolean {
+    if (this.data.freeChestCharges <= 0) return false;
+    this.data.freeChestCharges -= 1;
     this.save();
     return true;
   }
 
-  addPowerCores(amount: number): void {
-    this.data.powerCores += amount;
-  }
-
-  // ---- Run tracking --------------------------------------------------------
-
-  recordRun(result: {
-    score: number;
-    gates: number;
-    coinsEarned: number;
-    gemsEarned: number;
-    powerCoresEarned: number;
-    ghostPath: GhostFrame[];
-  }): { newBest: boolean; leagueChanged: boolean } {
-    this.data.runs += 1;
-    let newBest = false;
-    if (result.gates > this.data.bestGates) {
-      this.data.bestGates = result.gates;
-      this.data.bestScore = result.score;
-      this.data.ghostBestPath = result.ghostPath;
-      this.data.ghostBestGates = result.gates;
-      newBest = true;
-    }
-    // League points = gates cleared
-    this.data.leaguePoints += result.gates;
-    const leagueChanged = this.recomputeLeague();
-    this.save();
-    return { newBest, leagueChanged };
-  }
-
-  private recomputeLeague(): boolean {
-    const current = this.data.leagueId;
-    const order: LeagueId[] = ['bronze', 'silver', 'gold', 'plasma', 'apex'];
-    let pick: LeagueId = 'bronze';
-    for (const id of order) {
-      if (this.data.leaguePoints >= LEAGUES[id].threshold) pick = id;
-    }
-    if (pick !== current) {
-      this.data.leagueId = pick;
-      return true;
-    }
-    return false;
-  }
-
-  // ---- Upgrades ------------------------------------------------------------
-
-  getUpgradeLevel(id: UpgradeId): number {
-    return this.data.upgrades[id].level;
-  }
-
-  getUpgradeCost(id: UpgradeId): number {
-    return upgradeCost(id, this.data.upgrades[id].level);
-  }
-
-  canUpgrade(id: UpgradeId): boolean {
-    const lvl = this.data.upgrades[id].level;
-    if (lvl >= UPGRADES[id].maxLevel) return false;
-    return this.data.coins >= this.getUpgradeCost(id);
-  }
-
-  isUpgradeMaxed(id: UpgradeId): boolean {
-    return this.data.upgrades[id].level >= UPGRADES[id].maxLevel;
-  }
-
-  purchaseUpgrade(id: UpgradeId): boolean {
-    if (!this.canUpgrade(id)) return false;
-    const cost = this.getUpgradeCost(id);
-    this.data.coins -= cost;
-    this.data.upgrades[id].level += 1;
-    this.save();
-    return true;
-  }
-
-  // ---- Derived stats used by GameScene ------------------------------------
-
-  getCoinMultiplier(): number {
-    const base = 1 + this.data.upgrades.coinMultiplier.level * UPGRADES.coinMultiplier.effectPerLevel;
-    const doubler = this.data.coinDoublerUntil > Date.now() ? 2 : 1;
-    return base * doubler;
-  }
-
-  getFlapControlBonus(): number {
-    return this.data.upgrades.flapControl.level * UPGRADES.flapControl.effectPerLevel;
-  }
-
-  getStartingShields(): number {
-    return this.data.upgrades.shieldHits.level * UPGRADES.shieldHits.effectPerLevel;
-  }
-
-  getShardDropRateMultiplier(): number {
-    return 1 + this.data.upgrades.shardDropRate.level * UPGRADES.shardDropRate.effectPerLevel;
-  }
-
-  getReviveCharges(): number {
-    return this.data.upgrades.reviveCharges.level * UPGRADES.reviveCharges.effectPerLevel
-      + this.data.reviveTokens;
-  }
-
-  getPowerCoreDropChance(): number {
-    return ECONOMY.powerCoreDropChancePerGate * (1 + 0.25 * this.data.upgrades.shardDropRate.level);
-  }
-
-  // ---- Shop helpers --------------------------------------------------------
-
-  ownsSkin(id: SkinId): boolean {
-    return this.data.ownedSkins.includes(id);
-  }
-
-  unlockSkin(id: SkinId): void {
-    if (!this.data.ownedSkins.includes(id)) {
-      this.data.ownedSkins.push(id);
-    }
-    this.save();
-  }
-
-  selectSkin(id: SkinId): boolean {
-    if (!this.ownsSkin(id)) return false;
-    this.data.selectedSkin = id;
-    this.save();
-    return true;
-  }
-
-  activateCoinDoubler(durationMs: number): void {
-    const base = Math.max(Date.now(), this.data.coinDoublerUntil);
-    this.data.coinDoublerUntil = base + durationMs;
-    this.save();
-  }
-
-  isCoinDoublerActive(): boolean {
-    return this.data.coinDoublerUntil > Date.now();
-  }
-
-  coinDoublerRemainingMs(): number {
-    return Math.max(0, this.data.coinDoublerUntil - Date.now());
-  }
-
-  consumeReviveToken(): boolean {
-    if (this.data.reviveTokens > 0) {
-      this.data.reviveTokens -= 1;
-      this.save();
-      return true;
-    }
-    return false;
-  }
-
-  addReviveTokens(n: number): void {
-    this.data.reviveTokens += n;
-    this.save();
+  shouldOfferStarterPack(): boolean {
+    return this.data.matchesPlayed >= 2 && !this.data.starterPackOffered && !this.data.starterPackPurchased;
   }
 
   markStarterPackOffered(): void {
@@ -269,23 +146,15 @@ class ProgressionManager {
     this.save();
   }
 
-  markStarterPackPurchased(): void {
+  applyStarterPack(item: GearItem): void {
     this.data.starterPackPurchased = true;
-    this.save();
-  }
-
-  markTutorialCompleted(): void {
-    this.data.tutorialCompleted = true;
-    this.save();
-  }
-
-  markRunModifierOffered(): void {
-    this.data.nextRunModifierOffered = true;
-    this.save();
-  }
-
-  clearRunModifierFlag(): void {
-    this.data.nextRunModifierOffered = false;
+    this.data.battleBuffMatchesRemaining += ECONOMY.starterPackBuffMatches;
+    this.data.inventory = [item, ...this.data.inventory];
+    if (item.slot === 'weapon') {
+      this.data.weapon = item;
+    } else {
+      this.data.armor = item;
+    }
     this.save();
   }
 }

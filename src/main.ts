@@ -3,9 +3,8 @@ import { BootScene } from './scenes/BootScene';
 import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
 import { ResultsScene } from './scenes/ResultsScene';
-import { UpgradeScene } from './scenes/UpgradeScene';
 import { ShopScene } from './scenes/ShopScene';
-import { LeaderboardScene } from './scenes/LeaderboardScene';
+import { InventoryScene } from './scenes/InventoryScene';
 import { WORLD } from './config/balance';
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -37,7 +36,7 @@ const config: Phaser.Types.Core.GameConfig = {
   fps: {
     target: 60,
   },
-  scene: [BootScene, TitleScene, GameScene, ResultsScene, UpgradeScene, ShopScene, LeaderboardScene],
+  scene: [BootScene, TitleScene, GameScene, ResultsScene, ShopScene, InventoryScene],
 };
 
 const game = new Phaser.Game(config);

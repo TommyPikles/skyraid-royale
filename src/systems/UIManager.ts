@@ -208,7 +208,7 @@ export class UIManager {
     y: number,
     w: number,
     h: number,
-    fillColor: number = 0x14083a,
+    fillColor: number = COLORS.panel,
     strokeColor: number = COLORS.neonPink,
   ): Phaser.GameObjects.Rectangle {
     const r = this.scene.add.rectangle(x, y, w, h, fillColor, 0.96).setOrigin(0.5);

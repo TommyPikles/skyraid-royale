@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { UIManager } from '../systems/UIManager';
 import { progression } from '../systems/ProgressionManager';
-import { COLORS, LEAGUES, WORLD } from '../config/balance';
+import { COLORS, ECONOMY, WORLD } from '../config/balance';
 
 export class TitleScene extends Phaser.Scene {
   private ui!: UIManager;
@@ -13,79 +13,61 @@ export class TitleScene extends Phaser.Scene {
   create(): void {
     this.ui = new UIManager(this);
     this.ui.drawBackground();
-    this.ui.drawStars(80);
+    this.ui.drawStars(70);
 
     const w = WORLD.width;
-    const h = WORLD.height;
 
-    // Title wordmark
-    this.ui.title(w / 2, h * 0.22, 'SKYRAID', 58, '#ff4fd8');
-    this.ui.title(w / 2, h * 0.22 + 48, 'ROYALE', 36, '#7fffd4');
+    this.ui.title(w / 2, 106, 'CORE RUSH', 54, '#ffffff');
+    this.ui.label(w / 2, 145, '30-second arena duels with instant upgrades', 13);
 
-    // Subtitle
-    this.add
-      .text(w / 2, h * 0.22 + 88, 'Flap. Dominate. Ascend.', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '14px',
-        fontStyle: '600',
-        color: '#a79bc6',
-      })
-      .setOrigin(0.5);
+    this.drawPreview(w / 2, 335);
+    this.drawWalletStrip(w / 2, 540);
 
-    // Bird preview
-    this.drawHeroBird(w / 2, h * 0.42);
+    const buffLabel = progression.hasBattleBuff()
+      ? `Starter buff active: ${progression.state.battleBuffMatchesRemaining} matches left`
+      : progression.shouldOfferStarterPack()
+        ? 'Starter Pack unlocked in the shop'
+        : `Free chest in ${Math.max(1, ECONOMY.freeChestEveryMatches - progression.state.freeChestProgress)} matches`;
+    this.ui.label(w / 2, 586, buffLabel, 12);
 
-    // Currency strip
-    this.drawCurrencyStrip(w / 2, h * 0.55);
-
-    // League badge
-    this.drawLeagueBadge(w / 2, h * 0.62);
-
-    // Daily reward teaser (placeholder)
-    this.drawDailyTeaser(w / 2, h * 0.68);
-
-    // Primary CTA
-    this.ui.button(w / 2, h * 0.80, 260, 62, 'TAP TO PLAY', () => {
-      this.scene.start('GameScene', {});
+    this.ui.button(w / 2, 646, 260, 62, 'PLAY', () => {
+      this.scene.start('GameScene');
     });
-
-    // Secondary buttons row
-    this.ui.ghostButton(w / 2 - 90, h * 0.88, 80, 42, 'UPGRADE', () => {
-      this.scene.start('UpgradeScene');
-    });
-    this.ui.ghostButton(w / 2, h * 0.88, 80, 42, 'SHOP', () => {
+    this.ui.ghostButton(w / 2 - 100, 710, 90, 42, 'SHOP', () => {
       this.scene.start('ShopScene');
-    }, { color: COLORS.neonPink });
-    this.ui.ghostButton(w / 2 + 90, h * 0.88, 80, 42, 'LEAGUE', () => {
-      this.scene.start('LeaderboardScene');
+    });
+    this.ui.ghostButton(w / 2 + 10, 710, 110, 42, 'INVENTORY', () => {
+      this.scene.start('InventoryScene');
+    }, { color: COLORS.neonCyan });
+    this.ui.ghostButton(w / 2 + 130, 710, 70, 42, 'RESET', () => {
+      progression.reset();
+      this.scene.restart();
     }, { color: COLORS.coin });
-
-    // Best score bottom line
-    const best = progression.state.bestGates;
-    this.ui.label(w / 2, h * 0.95, best > 0 ? `BEST ${best} GATES` : 'FIRST RUN AWAITS', 12);
   }
 
-  private drawHeroBird(x: number, y: number): void {
-    const container = this.add.container(x, y);
-    const glow = this.add.circle(0, 0, 46, COLORS.playerGlow, 0.3);
-    const body = this.add.circle(0, 0, 28, COLORS.player, 1).setStrokeStyle(3, 0xffffff, 0.9);
-    const wingL = this.add.triangle(-18, 2, 0, 0, 22, -14, 22, 14, 0xffffff, 0.95);
-    const wingR = this.add.triangle(18, 2, 0, 0, -22, -14, -22, 14, 0xffffff, 0.95);
-    const eye = this.add.circle(7, -5, 5, 0x000000, 1);
-    container.add([glow, wingL, wingR, body, eye]);
-
-    this.tweens.add({ targets: container, y: y - 8, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    this.tweens.add({ targets: [wingL, wingR], scaleY: 0.6, duration: 280, yoyo: true, repeat: -1 });
-    this.tweens.add({ targets: glow, scale: 1.15, alpha: 0.5, duration: 900, yoyo: true, repeat: -1 });
+  private drawPreview(x: number, y: number): void {
+    const frame = this.add.container(x, y);
+    const panel = this.add.rectangle(0, 0, 340, 300, 0x0a1625, 0.9).setStrokeStyle(2, COLORS.arenaGrid, 1);
+    const arena = this.add.rectangle(0, 0, 300, 230, 0x0e2133, 1).setStrokeStyle(2, 0x214962, 1);
+    const coreLeft = this.add.circle(-120, 0, 20, COLORS.corePlayer, 1);
+    const coreRight = this.add.circle(120, 0, 20, COLORS.coreBot, 1);
+    const player = this.add.circle(-78, 0, 16, COLORS.player, 1);
+    const bot = this.add.circle(78, 0, 16, COLORS.bot, 1);
+    const orbA = this.add.circle(-10, -38, 8, COLORS.orb, 1);
+    const orbB = this.add.circle(26, 34, 8, COLORS.orb, 1);
+    frame.add([panel, arena, coreLeft, coreRight, player, bot, orbA, orbB]);
+    this.tweens.add({ targets: player, x: -30, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: bot, x: 30, duration: 1000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: [orbA, orbB], scale: 1.35, alpha: 0.6, duration: 700, yoyo: true, repeat: -1 });
   }
 
-  private drawCurrencyStrip(x: number, y: number): void {
+  private drawWalletStrip(x: number, y: number): void {
     const g = this.add.container(x, y);
-    const panel = this.add.rectangle(0, 0, 300, 38, 0x14083a, 0.7).setStrokeStyle(2, COLORS.neonPurple, 0.7);
+    const panel = this.add.rectangle(0, 0, 320, 52, COLORS.panel, 0.92).setStrokeStyle(2, COLORS.neonPurple, 0.8);
     g.add(panel);
-    this.addCurrencyCell(g, -100, 'COIN', progression.state.coins, '#ffd24d');
-    this.addCurrencyCell(g, 0, 'GEM', progression.state.gems, '#ff4fd8');
-    this.addCurrencyCell(g, 100, 'CORE', progression.state.powerCores, '#00e5ff');
+    this.addCurrencyCell(g, -104, 'GOLD', progression.state.gold, '#ffd166');
+    this.addCurrencyCell(g, 0, 'GEMS', progression.state.premiumCurrency, '#6ce5ff');
+    this.addCurrencyCell(g, 104, 'WINS', progression.state.wins, '#ffffff');
   }
 
   private addCurrencyCell(parent: Phaser.GameObjects.Container, x: number, label: string, value: number, color: string): void {
@@ -99,34 +81,8 @@ export class TitleScene extends Phaser.Scene {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '9px',
       fontStyle: '700',
-      color: '#a79bc6',
+      color: '#9fb5c8',
     }).setOrigin(0.5);
     parent.add([v, l]);
-  }
-
-  private drawLeagueBadge(x: number, y: number): void {
-    const lid = progression.state.leagueId;
-    const league = LEAGUES[lid];
-    const next = league.nextId ? LEAGUES[league.nextId] : null;
-    const label = this.add.text(x, y, league.label.toUpperCase() + ' LEAGUE', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '18px',
-      fontStyle: '900',
-      color: '#' + league.color.toString(16).padStart(6, '0'),
-    }).setOrigin(0.5);
-    label.setStroke('#000000', 4);
-
-    if (next) {
-      const pts = progression.state.leaguePoints;
-      const progress = Math.min(1, (pts - league.threshold) / Math.max(1, next.threshold - league.threshold));
-      const bar = this.add.rectangle(x, y + 22, 180, 8, 0x251463, 1).setStrokeStyle(1, 0xffffff, 0.3);
-      this.add.rectangle(x - 90 + (180 * progress) / 2, y + 22, 180 * progress, 6, league.color, 1).setOrigin(0.5);
-      void bar;
-      this.ui.label(x, y + 36, `${pts}/${next.threshold} to ${next.label}`, 10);
-    }
-  }
-
-  private drawDailyTeaser(x: number, y: number): void {
-    this.ui.label(x, y, 'Come back tomorrow for +100 coins', 11);
   }
 }

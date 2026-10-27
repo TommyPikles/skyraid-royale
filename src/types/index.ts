@@ -1,62 +1,42 @@
-export type UpgradeId =
-  | 'flapControl'
-  | 'shieldHits'
-  | 'coinMultiplier'
-  | 'shardDropRate'
-  | 'reviveCharges';
+export type GearSlot = 'weapon' | 'armor';
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type UpgradeChoiceId = 'damage' | 'attackSpeed' | 'dash' | 'shield';
+export type CurrencyPackId = 'small' | 'medium' | 'large';
 
-export type SkinId = 'default' | 'plasma' | 'solarflare' | 'voidbird';
-
-export type LeagueId = 'bronze' | 'silver' | 'gold' | 'plasma' | 'apex';
-
-export type ObstacleVariant = 'static' | 'moving' | 'rotating' | 'narrow' | 'double';
-
-export type RunModifierId = 'extraShield' | 'coinMagnet' | 'smoothFlap';
-
-export interface UpgradeState {
-  level: number;
+export interface GearItem {
+  id: string;
+  name: string;
+  slot: GearSlot;
+  rarity: Rarity;
+  damageBonus: number;
+  hpBonus: number;
 }
 
 export interface SaveData {
   version: number;
-  runs: number;
-  bestScore: number;
-  bestGates: number;
-  lifetimeCoins: number;
-  coins: number;
-  gems: number;
-  powerCores: number;
-  upgrades: Record<UpgradeId, UpgradeState>;
-  ownedSkins: SkinId[];
-  selectedSkin: SkinId;
+  gold: number;
+  premiumCurrency: number;
+  matchesPlayed: number;
+  wins: number;
+  bestMatchTimeMs: number | null;
+  freeChestProgress: number;
+  freeChestCharges: number;
+  weapon: GearItem | null;
+  armor: GearItem | null;
+  inventory: GearItem[];
   starterPackOffered: boolean;
   starterPackPurchased: boolean;
-  coinDoublerUntil: number; // epoch ms; 0 = none
-  reviveTokens: number;
-  lastPlayed: number;
-  leagueId: LeagueId;
-  leaguePoints: number;
-  ghostBestPath: GhostFrame[] | null;
-  ghostBestGates: number;
-  nextRunModifierOffered: boolean;
-  tutorialCompleted: boolean;
+  battleBuffMatchesRemaining: number;
 }
 
-export interface GhostFrame {
-  t: number; // time since run start (ms)
-  y: number; // player y position
-  v: number; // velocity
-}
-
-export interface RunResult {
-  score: number;
-  gates: number;
-  coinsEarned: number;
-  gemsEarned: number;
-  powerCoresEarned: number;
-  distance: number;
-  ghostComparisonGates: number | null;
-  newBest: boolean;
+export interface MatchReward {
+  winner: 'player' | 'bot';
+  durationMs: number;
+  goldEarned: number;
+  loot: GearItem;
+  freeChestReady: boolean;
+  starterPackOffer: boolean;
+  chestPreview: Rarity[];
 }
 
 export interface ShopItem {
@@ -64,6 +44,5 @@ export interface ShopItem {
   title: string;
   subtitle: string;
   priceLabel: string;
-  highlight?: boolean;
   badge?: string;
 }

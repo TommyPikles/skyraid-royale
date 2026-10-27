@@ -1,22 +1,21 @@
 import Phaser from 'phaser';
 import { UIManager } from '../systems/UIManager';
 import { progression } from '../systems/ProgressionManager';
-import { COLORS, FIRST_SESSION, RUN_MODIFIERS, SHOP_ITEMS, WORLD } from '../config/balance';
-import type { RunModifierId, RunResult } from '../types';
-import { shop } from '../systems/ShopManager';
+import { COLORS, WORLD } from '../config/balance';
+import type { MatchReward, Rarity } from '../types';
 
-type Init = { result: RunResult };
+type Init = { reward: MatchReward };
 
 export class ResultsScene extends Phaser.Scene {
   private ui!: UIManager;
-  private result!: RunResult;
+  private reward!: MatchReward;
 
   constructor() {
     super('ResultsScene');
   }
 
   init(data: Init): void {
-    this.result = data.result;
+    this.reward = data.reward;
   }
 
   create(): void {
@@ -27,202 +26,112 @@ export class ResultsScene extends Phaser.Scene {
     const w = WORLD.width;
     const h = WORLD.height;
 
-    this.ui.title(w / 2, 70, this.result.newBest ? 'NEW BEST!' : 'RUN COMPLETE', 32, this.result.newBest ? '#7fffd4' : '#ffffff');
-    if (this.result.newBest) {
-      this.ui.label(w / 2, 98, 'Ghost path updated', 12);
+    this.ui.title(w / 2, 70, this.reward.winner === 'player' ? 'VICTORY' : 'DEFEAT', 34, '#ffffff');
+    this.ui.label(w / 2, 100, `${Math.round(this.reward.durationMs / 100) / 10}s match`, 13);
+
+    this.ui.panel(w / 2, 200, 340, 120, COLORS.panel, COLORS.neonPurple);
+    this.metric(w / 2 - 105, 170, 'GOLD', `+${this.reward.goldEarned}`, '#ffd166');
+    this.metric(w / 2, 170, 'DROP', this.reward.loot.rarity.toUpperCase(), this.rarityColor(this.reward.loot.rarity));
+    this.metric(
+      w / 2 + 105,
+      170,
+      'CHEST',
+      this.reward.freeChestReady ? 'READY' : `${3 - progression.state.freeChestProgress}/3`,
+      this.reward.freeChestReady ? '#6ce5ff' : '#ffffff',
+    );
+
+    this.ui.panel(w / 2, 360, 360, 180, COLORS.panel, this.rarityColorValue(this.reward.loot.rarity));
+    this.ui.title(w / 2, 300, this.reward.loot.name, 24, '#ffffff');
+    this.ui.label(
+      w / 2,
+      328,
+      `${this.reward.loot.slot.toUpperCase()}  •  +${this.reward.loot.damageBonus} DMG  •  +${this.reward.loot.hpBonus} HP`,
+      12,
+    );
+    this.drawNearMissStrip(w / 2, 382, this.reward.chestPreview);
+
+    this.ui.button(w / 2, 468, 180, 44, 'EQUIP', () => {
+      progression.equipItem(this.reward.loot.id);
+      this.flashMessage('Equipped');
+    }, { color: this.rarityColorValue(this.reward.loot.rarity), fontSize: 16 });
+
+    if (this.reward.starterPackOffer) {
+      progression.markStarterPackOffered();
+      this.ui.panel(w / 2, 592, 360, 120, COLORS.panel, COLORS.neonPink);
+      this.ui.title(w / 2, 558, 'STARTER PACK', 22, '#ffd166');
+      this.ui.label(w / 2, 584, 'Guaranteed Legendary + 20% damage for 10 matches', 11);
+      this.ui.label(w / 2, 604, '$4.99 mock offer for the prototype', 12);
+      this.ui.ghostButton(w / 2, 636, 190, 34, 'OPEN SHOP OFFER', () => this.scene.start('ShopScene'), { color: COLORS.neonPink });
     }
 
-    // Score panel
-    const panelY = 170;
-    this.ui.panel(w / 2, panelY, 340, 200, 0x14083a, COLORS.neonPurple);
-    this.row(w / 2 - 130, panelY - 70, 'GATES', String(this.result.gates), '#ffffff');
-    this.row(w / 2 + 30, panelY - 70, 'SCORE', String(this.result.score), '#ffffff');
-    this.row(w / 2 - 130, panelY - 20, 'COINS', `+${this.result.coinsEarned}`, '#ffd24d');
-    this.row(w / 2 + 30, panelY - 20, 'GEMS', `+${this.result.gemsEarned}`, '#ff4fd8');
-    this.row(w / 2 - 130, panelY + 30, 'CORES', `+${this.result.powerCoresEarned}`, '#00e5ff');
-    this.row(w / 2 + 30, panelY + 30, 'DIST', `${this.result.distance}`, '#a79bc6');
-
-    // Ghost comparison
-    if (this.result.ghostComparisonGates !== null) {
-      const diff = this.result.ghostComparisonGates;
-      let msg = 'Tied with your ghost';
-      let color = '#a79bc6';
-      if (diff > 0) {
-        msg = `You lost by ${diff} gates`;
-        color = '#ff4060';
-      } else if (diff < 0) {
-        msg = `You beat your ghost by ${-diff} gates!`;
-        color = '#7fffd4';
-      }
-      this.add.text(w / 2, panelY + 72, msg, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        fontStyle: '700',
-        color,
-      }).setOrigin(0.5);
-    }
-
-    // Post-run flow logic:
-    //  - after run #1: offer a free run modifier (if not already offered)
-    //  - after run #2: pitch starter pack (if not yet offered)
-    //  - otherwise: standard Play Again + menu
-    const runNumber = progression.state.runs;
-    let popupPlaced = false;
-    if (runNumber === FIRST_SESSION.offerRunModifierAfterRunN && !progression.state.nextRunModifierOffered) {
-      this.showRunModifierChoice();
-      popupPlaced = true;
-    } else if (
-      runNumber === FIRST_SESSION.offerStarterPackAfterRunN &&
-      !progression.state.starterPackOffered &&
-      !progression.state.starterPackPurchased
-    ) {
-      this.showStarterPackOffer();
-      popupPlaced = true;
-    }
-
-    if (!popupPlaced) {
-      this.showActionRow();
-    }
+    this.ui.button(w / 2, h - 86, 220, 56, 'PLAY AGAIN', () => {
+      this.scene.start('GameScene');
+    });
+    this.ui.ghostButton(w / 2 - 92, h - 34, 110, 36, 'INVENTORY', () => {
+      this.scene.start('InventoryScene');
+    });
+    this.ui.ghostButton(w / 2 + 92, h - 34, 110, 36, 'MENU', () => {
+      this.scene.start('TitleScene');
+    }, { color: COLORS.coin });
   }
 
-  private row(x: number, y: number, label: string, value: string, color: string): void {
+  private metric(x: number, y: number, label: string, value: string, color: string): void {
     this.add.text(x, y, label, {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
       fontStyle: '700',
-      color: '#a79bc6',
-    });
-    this.add.text(x, y + 14, value, {
+      color: '#9fb5c8',
+    }).setOrigin(0.5);
+    this.add.text(x, y + 22, value, {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '22px',
       fontStyle: '900',
       color,
       stroke: '#000000',
       strokeThickness: 3,
-    });
-  }
-
-  private showActionRow(): void {
-    const w = WORLD.width;
-    const h = WORLD.height;
-    this.ui.button(w / 2, h - 150, 260, 60, 'PLAY AGAIN', () => {
-      this.scene.start('GameScene', {});
-    });
-    this.ui.ghostButton(w / 2 - 90, h - 80, 80, 40, 'UPGRADE', () => {
-      this.scene.start('UpgradeScene');
-    });
-    this.ui.ghostButton(w / 2, h - 80, 80, 40, 'SHOP', () => {
-      this.scene.start('ShopScene');
-    }, { color: COLORS.neonPink });
-    this.ui.ghostButton(w / 2 + 90, h - 80, 80, 40, 'MENU', () => {
-      this.scene.start('TitleScene');
-    }, { color: COLORS.coin });
-  }
-
-  private showRunModifierChoice(): void {
-    const w = WORLD.width;
-    const h = WORLD.height;
-    const cx = w / 2;
-    const cy = h - 220;
-
-    this.ui.panel(cx, cy, 360, 260, 0x14083a, COLORS.neonCyan);
-    this.ui.title(cx, cy - 100, 'PICK A POWER', 24, '#ffffff');
-    this.ui.label(cx, cy - 75, 'Free gift for next run', 12);
-
-    const mods: RunModifierId[] = ['extraShield', 'coinMagnet', 'smoothFlap'];
-    mods.forEach((id, i) => {
-      const m = RUN_MODIFIERS[id];
-      const y = cy - 30 + i * 40;
-      const btn = this.add.container(cx, y);
-      const bg = this.add.rectangle(0, 0, 300, 34, m.color, 0.22).setStrokeStyle(2, m.color, 0.9).setOrigin(0.5);
-      const emoji = this.add.text(-130, 0, m.emoji, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '11px', fontStyle: '900',
-        color: '#' + m.color.toString(16).padStart(6, '0'),
-      }).setOrigin(0, 0.5);
-      const title = this.add.text(-80, -7, m.label, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '14px', fontStyle: '900', color: '#ffffff',
-      }).setOrigin(0, 0.5);
-      const sub = this.add.text(-80, 8, m.description, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#a79bc6',
-      }).setOrigin(0, 0.5);
-      btn.add([bg, emoji, title, sub]);
-      btn.setSize(300, 34);
-      this.ui.registerButton(btn, cx, y, 300, 34, () => {
-        progression.markRunModifierOffered();
-        this.scene.start('GameScene', { runModifier: id });
-      });
-    });
-  }
-
-  private showStarterPackOffer(): void {
-    progression.markStarterPackOffered();
-    const w = WORLD.width;
-    const h = WORLD.height;
-    const cx = w / 2;
-    const cy = h - 200;
-    const p = SHOP_ITEMS.starterPack;
-
-    this.ui.panel(cx, cy, 360, 280, 0x14083a, COLORS.neonPink);
-
-    // badge
-    const badge = this.add.text(cx + 100, cy - 105, '95% OFF', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '12px', fontStyle: '900', color: '#0a0420',
-      backgroundColor: '#ffd24d', padding: { x: 6, y: 2 },
-    }).setOrigin(0.5).setAngle(10);
-    void badge;
-
-    this.ui.title(cx, cy - 95, 'STARTER PACK', 24, '#ffd24d');
-    this.ui.label(cx, cy - 68, p.subtitle, 12);
-
-    // loot row
-    this.lootCell(cx - 100, cy - 30, COLORS.coin, `+${p.rewardCoins}`, 'COINS');
-    this.lootCell(cx, cy - 30, COLORS.neonPink, `+${p.rewardGems}`, 'GEMS');
-    this.lootCell(cx + 100, cy - 30, COLORS.neonCyan, 'PLASMA', 'SKIN');
-
-    this.add.text(cx - 60, cy + 40, '$19.99', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '14px', fontStyle: '700',
-      color: '#a79bc6',
-    }).setOrigin(0.5).setStyle({ textDecoration: 'line-through' });
-
-    this.add.text(cx + 10, cy + 40, p.priceLabel, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '28px', fontStyle: '900',
-      color: '#7fffd4',
     }).setOrigin(0.5);
+  }
 
-    this.ui.button(cx, cy + 85, 240, 50, 'CLAIM NOW', () => {
-      const res = shop.buyStarterPack();
-      if (res.ok) {
-        this.flashMessage(res.message, COLORS.neonCyan);
+  private drawNearMissStrip(x: number, y: number, preview: Rarity[]): void {
+    preview.forEach((rarity, index) => {
+      const px = x - 120 + index * 60;
+      this.add.rectangle(px, y, 52, 68, this.rarityColorValue(rarity), index === preview.length - 1 ? 0.5 : 0.22)
+        .setStrokeStyle(index === preview.length - 1 ? 3 : 1, this.rarityColorValue(rarity), 1);
+      this.add.text(px, y - 6, rarity.slice(0, 4).toUpperCase(), {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '11px',
+        fontStyle: '900',
+        color: '#ffffff',
+      }).setOrigin(0.5);
+      if (index === preview.length - 2) {
+        this.add.text(px, y + 18, 'SO CLOSE', {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '8px',
+          fontStyle: '900',
+          color: '#ffffff',
+        }).setOrigin(0.5);
       }
-      this.time.delayedCall(700, () => this.showActionRow());
-    }, { color: COLORS.neonPink });
-
-    this.ui.ghostButton(cx, cy + 130, 140, 32, 'Skip for now', () => {
-      this.showActionRow();
     });
   }
 
-  private lootCell(x: number, y: number, color: number, value: string, label: string): void {
-    const bg = this.add.rectangle(x, y, 80, 60, color, 0.18).setStrokeStyle(1, color, 0.8);
-    this.add.text(x, y - 8, value, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '16px', fontStyle: '900',
-      color: '#' + color.toString(16).padStart(6, '0'),
+  private flashMessage(text: string): void {
+    const label = this.add.text(WORLD.width / 2, 520, text, {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '14px',
+      fontStyle: '900',
+      color: '#6ce5ff',
     }).setOrigin(0.5);
-    this.add.text(x, y + 14, label, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '10px', fontStyle: '700',
-      color: '#a79bc6',
-    }).setOrigin(0.5);
-    void bg;
+    this.tweens.add({ targets: label, alpha: 0, y: 490, duration: 800, onComplete: () => label.destroy() });
   }
 
-  private flashMessage(text: string, color: number): void {
-    const m = this.add.text(WORLD.width / 2, 120, text, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '18px', fontStyle: '900',
-      color: '#' + color.toString(16).padStart(6, '0'),
-      stroke: '#000000', strokeThickness: 4,
-    }).setOrigin(0.5).setDepth(1500);
-    this.tweens.add({
-      targets: m, y: 80, alpha: 0, duration: 1400, onComplete: () => m.destroy(),
-    });
+  private rarityColor(rarity: Rarity): string {
+    return '#' + this.rarityColorValue(rarity).toString(16).padStart(6, '0');
+  }
+
+  private rarityColorValue(rarity: Rarity): number {
+    if (rarity === 'legendary') return 0xffd166;
+    if (rarity === 'epic') return 0xb07cff;
+    if (rarity === 'rare') return 0x6ce5ff;
+    return 0x9fb5c8;
   }
 }

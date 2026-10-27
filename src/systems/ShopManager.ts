@@ -1,63 +1,56 @@
-import { SHOP_ITEMS, ECONOMY } from '../config/balance';
+import { ECONOMY } from '../config/balance';
+import { buildNearMissPreview, generateGear } from './LootSystem';
 import { progression } from './ProgressionManager';
-import type { SkinId } from '../types';
+import type { CurrencyPackId } from '../types';
 
 export type PurchaseResult =
-  | { ok: true; message: string }
+  | { ok: true; message: string; rewardItemName?: string; preview?: ReturnType<typeof buildNearMissPreview> }
   | { ok: false; reason: string };
 
-/**
- * ShopManager — mock IAP. In production, hook these into StoreKit / Play Billing.
- * Paid items (USD priceLabel) silently succeed in prototype.
- * Virtual items (gem cost) actually spend gems.
- */
 class ShopManager {
   buyStarterPack(): PurchaseResult {
-    const p = SHOP_ITEMS.starterPack;
-    progression.addCoins(p.rewardCoins);
-    progression.addGems(p.rewardGems);
-    progression.unlockSkin(p.rewardSkin);
-    progression.selectSkin(p.rewardSkin);
-    progression.markStarterPackPurchased();
-    return { ok: true, message: 'Starter Pack unlocked!' };
+    const item = generateGear('legendary');
+    progression.applyStarterPack(item);
+    return {
+      ok: true,
+      message: 'Starter Pack activated',
+      rewardItemName: item.name,
+      preview: buildNearMissPreview(item.rarity),
+    };
   }
 
-  buyGemPack(id: 'gemsSmall' | 'gemsMedium' | 'gemsLarge' | 'gemsWhale'): PurchaseResult {
-    const p = SHOP_ITEMS[id];
-    progression.addGems(p.rewardGems);
-    return { ok: true, message: `+${p.rewardGems} gems` };
+  buyCurrencyPack(id: CurrencyPackId): PurchaseResult {
+    const pack = ECONOMY.premiumPacks[id];
+    progression.addPremiumCurrency(pack.premium);
+    return { ok: true, message: `+${pack.premium} gems` };
   }
 
-  buyCoinDoubler(): PurchaseResult {
-    const p = SHOP_ITEMS.coinDoubler;
-    if (!progression.spendGems(p.cost.gems)) {
+  openPaidChest(): PurchaseResult {
+    if (!progression.spendPremiumCurrency(ECONOMY.paidChestCost)) {
       return { ok: false, reason: 'Not enough gems' };
     }
-    progression.activateCoinDoubler(ECONOMY.coinDoublerDurationMs);
-    return { ok: true, message: 'Coin Doubler: 30 min' };
+    const item = generateGear();
+    progression.addInventoryItem(item);
+    return {
+      ok: true,
+      message: 'Premium chest opened',
+      rewardItemName: item.name,
+      preview: buildNearMissPreview(item.rarity),
+    };
   }
 
-  buyRevive(): PurchaseResult {
-    const p = SHOP_ITEMS.revive;
-    if (!progression.spendGems(p.cost.gems)) {
-      return { ok: false, reason: 'Not enough gems' };
+  openFreeChest(): PurchaseResult {
+    if (!progression.consumeFreeChest()) {
+      return { ok: false, reason: 'Free chest not ready' };
     }
-    progression.addReviveTokens(1);
-    return { ok: true, message: '+1 Revive Token' };
-  }
-
-  buySkin(id: Exclude<SkinId, 'default' | 'plasma'>): PurchaseResult {
-    const key = id === 'solarflare' ? 'skinSolarflare' : 'skinVoidbird';
-    const p = SHOP_ITEMS[key];
-    if (progression.ownsSkin(id)) {
-      return { ok: false, reason: 'Already owned' };
-    }
-    if (!progression.spendGems(p.cost.gems)) {
-      return { ok: false, reason: 'Not enough gems' };
-    }
-    progression.unlockSkin(id);
-    progression.selectSkin(id);
-    return { ok: true, message: `${p.title} equipped!` };
+    const item = generateGear();
+    progression.addInventoryItem(item);
+    return {
+      ok: true,
+      message: 'Free chest opened',
+      rewardItemName: item.name,
+      preview: buildNearMissPreview(item.rarity),
+    };
   }
 }
 
